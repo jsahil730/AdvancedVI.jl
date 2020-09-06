@@ -8,7 +8,7 @@ using DocStringExtensions
 using ProgressMeter, LinearAlgebra
 
 using ForwardDiff
-using Tracker
+using Tracker, ReverseDiff
 
 const PROGRESS = Ref(true)
 function turnprogress(switch::Bool)
@@ -19,6 +19,7 @@ end
 const DEBUG = Bool(parse(Int, get(ENV, "DEBUG_ADVANCEDVI", "0")))
 
 include("ad.jl")
+include("reversediff.jl")
 
 using Requires
 function __init__()
@@ -52,29 +53,29 @@ function __init__()
             return out
         end
     end
-    @require ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267" begin
-        include("compat/reversediff.jl")
-        export ReverseDiffAD
+    # @require ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267" begin
+    #     include("compat/reversediff.jl")
+    #     export ReverseDiffAD
 
-        function AdvancedVI.grad!(
-            vo,
-            alg::VariationalInference{<:AdvancedVI.ReverseDiffAD{false}},
-            q,
-            model,
-            θ::AbstractVector{<:Real},
-            out::DiffResults.MutableDiffResult,
-            args...
-        )
-            f(θ) = if (q isa Distribution)
-                - vo(alg, update(q, θ), model, args...)
-            else
-                - vo(alg, q(θ), model, args...)
-            end
-            tp = AdvancedVI.tape(f, θ)
-            ReverseDiff.gradient!(out, tp, θ)
-            return out
-        end
-    end
+    #     function AdvancedVI.grad!(
+    #         vo,
+    #         alg::VariationalInference{<:AdvancedVI.ReverseDiffAD{false}},
+    #         q,
+    #         model,
+    #         θ::AbstractVector{<:Real},
+    #         out::DiffResults.MutableDiffResult,
+    #         args...
+    #     )
+    #         f(θ) = if (q isa Distribution)
+    #             - vo(alg, update(q, θ), model, args...)
+    #         else
+    #             - vo(alg, q(θ), model, args...)
+    #         end
+    #         tp = AdvancedVI.tape(f, θ)
+    #         ReverseDiff.gradient!(out, tp, θ)
+    #         return out
+    #     end
+    # end
 end
 
 export
@@ -170,6 +171,26 @@ function grad!(
     DiffResults.gradient!(out, Tracker.grad(θ_tracked))
 end
 
+export ReverseDiffAD
+
+function AdvancedVI.grad!(
+    vo,
+    alg::VariationalInference{<:AdvancedVI.ReverseDiffAD{false}},
+    q,
+    model,
+    θ::AbstractVector{<:Real},
+    out::DiffResults.MutableDiffResult,
+    args...
+)
+    f(θ) = if (q isa Distribution)
+        - vo(alg, update(q, θ), model, args...)
+    else
+        - vo(alg, q(θ), model, args...)
+    end
+    tp = AdvancedVI.tape(f, θ)
+    ReverseDiff.gradient!(out, tp, θ)
+    return out
+end
 
 """
     optimize!(vo, alg::VariationalInference{AD}, q::VariationalPosterior, model::Model, θ; optimizer = TruncatedADAGrad())
